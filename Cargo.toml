@@ -25,6 +25,11 @@ elements = { version = "0.16", features = ["serde-feature"] }
 bitcoincore-rpc = "0.13"
 chrono = "0.4.11"
 tempdir = "0.3.7"
+# TODO: add trigger feature
+#bitcoind = "0.6.0"
+#bitcoind = { "path" = "../bitcoind", rev = "54db9a43aa27cd93c9b98bdb8210f8c50d680931" }
+#electrsd = "0.2.0"
+electrsd = { "path" = "../electrsd" }
 
 [profile.release]
 lto = true

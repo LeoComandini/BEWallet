@@ -13,7 +13,7 @@ fn liquid() {
 
     let mut server = test_session::TestElectrumServer::new(debug, electrs_exec, node_exec);
     let mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about".to_string();
-    let mut wallet = test_session::TestElectrumWallet::new(&server.electrs_url, mnemonic);
+    let mut wallet = test_session::TestElectrumWallet::new(&server.server.electrum_url, mnemonic);
 
     let node_address = server.node_getnewaddress(Some("p2sh-segwit"));
     let node_bech32_address = server.node_getnewaddress(Some("bech32"));
@@ -41,8 +41,32 @@ fn liquid() {
     wallet.is_verified(&txid, SPVVerifyResult::Verified);
     let utxos = wallet.utxos();
     wallet.send_tx(&node_address, 1_000, None, Some(utxos));
+}
 
-    server.stop();
+#[test]
+fn leo() {
+    log::warn!("*** start");
+    let electrs_exec = env::var("ELECTRS_LIQUID_EXEC")
+        .expect("env ELECTRS_LIQUID_EXEC pointing to electrs executable is required");
+    let node_exec = env::var("ELEMENTSD_EXEC")
+        .expect("env ELEMENTSD_EXEC pointing to elementsd executable is required");
+    let debug = env::var("DEBUG").is_ok();
+
+    log::warn!("*** creating server");
+    let mut server = test_session::TestElectrumServer::new(debug, electrs_exec, node_exec);
+
+    assert!(false);
+    log::warn!("*** creating wallet");
+    let mnemonic1 = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about".to_string();
+    let mut taker = test_session::TestElectrumWallet::new(&server.server.electrum_url, mnemonic1);
+
+    log::warn!("*** funding wallet");
+    taker.fund_btc(&mut server);
+    let asset1 = taker.fund_asset(&mut server);
+
+    log::warn!("*** asset roundtrip");
+    // asset db tests
+    taker.liquidex_assets_db_roundtrip();
 }
 
 #[test]
@@ -56,7 +80,7 @@ fn dex() {
     let mut server = test_session::TestElectrumServer::new(debug, electrs_exec, node_exec);
 
     let mnemonic1 = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about".to_string();
-    let mut taker = test_session::TestElectrumWallet::new(&server.electrs_url, mnemonic1);
+    let mut taker = test_session::TestElectrumWallet::new(&server.server.electrum_url, mnemonic1);
 
     taker.fund_btc(&mut server);
     let asset1 = taker.fund_asset(&mut server);
@@ -65,7 +89,7 @@ fn dex() {
     taker.liquidex_assets_db_roundtrip();
 
     let mnemonic2 = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon actual".to_string();
-    let mut maker = test_session::TestElectrumWallet::new(&server.electrs_url, mnemonic2);
+    let mut maker = test_session::TestElectrumWallet::new(&server.server.electrum_url, mnemonic2);
 
     let asset2 = maker.fund_asset(&mut server);
 
@@ -273,6 +297,4 @@ fn dex() {
     let fee = taker.get_fee(&txid);
     let balance_btc_6 = taker.balance(&policy_asset);
     assert_eq!(balance_btc_6, balance_btc_5 - fee);
-
-    server.stop();
 }

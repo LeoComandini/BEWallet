@@ -117,14 +117,7 @@ fn to_unconfidential(address: &elements::Address) -> elements::Address {
 }
 
 pub struct TestElectrumServer {
-    node: bitcoincore_rpc::Client,
-    node_process: Child,
-    electrs_process: Child,
-    electrs_header: electrum_client::Client,
-    pub electrs_url: String,
-    // Keep dir in struct so they are removed once the struct is dropped
-    _node_work_dir: TempDir,
-    _electrs_work_dir: TempDir,
+    pub server: electrsd::ElectrsD,
 }
 
 impl TestElectrumServer {
@@ -133,138 +126,47 @@ impl TestElectrumServer {
             let filter = if is_debug {
                 LevelFilter::Info
             } else {
-                LevelFilter::Off
+                //LevelFilter::Off
+                LevelFilter::Info
             };
             log::set_logger(&LOGGER)
                 .map(|()| log::set_max_level(filter))
                 .expect("cannot initialize logging");
         });
-
-        let _node_work_dir = TempDir::new("electrum_integration_tests").unwrap();
-        let node_work_dir_str = format!("{}", &_node_work_dir.path().display());
-        let sum_port = 1;
-
-        let rpc_port = 55363u16 + sum_port;
-        let p2p_port = 34975u16 + sum_port;
-        let socket = format!("127.0.0.1:{}", rpc_port);
-        let node_url = format!("http://{}", socket);
-
-        let test = TcpStream::connect(&socket);
-        assert!(
-            test.is_err(),
-            "check the port is not open with a previous instance of elementsd"
-        );
-
+        
+        /*
         let datadir_arg = format!("-datadir={}", &node_work_dir_str);
         let rpcport_arg = format!("-rpcport={}", rpc_port);
         let p2pport_arg = format!("-port={}", p2p_port);
-        let mut args: Vec<&str> = vec![&datadir_arg, &rpcport_arg, &p2pport_arg];
-        args.push("-initialfreecoins=2100000000");
-        args.push("-chain=liquidregtest");
-        args.push("-validatepegin=0");
-        args.push("-fallbackfee=0.00001");
+        let mut args: Vec<String> = vec![datadir_arg, rpcport_arg, p2pport_arg];
+         * */
+        let mut args: Vec<String> = vec![];
+        args.push("-initialfreecoins=2100000000".to_string());
+        args.push("-chain=liquidregtest".to_string());
+        args.push("-validatepegin=0".to_string());
+        args.push("-fallbackfee=0.00001".to_string());
         if !is_debug {
-            args.push("-daemon");
+            args.push("-daemon".to_string());
         }
-        args.push("-dustrelayfee=0.00000001");
-        info!("LAUNCHING: {} {}", node_exec, args.join(" "));
-        let node_process = Command::new(node_exec).args(args).spawn().unwrap();
-        info!("node spawned");
+        args.push("-dustrelayfee=0.00000001".to_string());
 
-        let par_network = "liquidregtest";
-        let cookie_file = _node_work_dir.path().join(par_network).join(".cookie");
-        // wait elementsd is ready, use default wallet
-        let mut i = 120;
-        let node: bitcoincore_rpc::Client = loop {
-            assert!(i > 0, "1 minute without updates");
-            i -= 1;
-            thread::sleep(Duration::from_millis(500));
-            assert!(node_process.stderr.is_none());
-            let client_result = bitcoincore_rpc::Client::new(
-                node_url.clone(),
-                Auth::CookieFile(cookie_file.clone()),
-            );
-            match client_result {
-                Ok(client) => match client.call::<Value>("getblockchaininfo", &[]) {
-                    Ok(_) => break client,
-                    Err(e) => warn!("{:?}", e),
-                },
-                Err(e) => warn!("{:?}", e),
-            }
-        };
-        info!("Elements node started");
-        let cookie_value = std::fs::read_to_string(&cookie_file).unwrap();
-
-        let electrs_port = 62431u16 + sum_port;
-        let _electrs_work_dir = TempDir::new("electrum_integration_tests").unwrap();
-        let electrs_work_dir_str = format!("{}", &_electrs_work_dir.path().display());
-        let electrs_url = format!("127.0.0.1:{}", electrs_port);
-        let daemon_url = format!("127.0.0.1:{}", rpc_port);
-        let mut args: Vec<&str> = vec![
-            "--db-dir",
-            &electrs_work_dir_str,
-            "--daemon-dir",
-            &node_work_dir_str,
-            "--electrum-rpc-addr",
-            &electrs_url,
-            "--daemon-rpc-addr",
-            &daemon_url,
-            "--network",
-            par_network,
-            "--cookie",
-            &cookie_value,
-        ];
-        if is_debug {
-            args.push("-v");
-        }
-
-        info!("LAUNCHING: {} {}", electrs_exec, args.join(" "));
-        let electrs_process = Command::new(electrs_exec).args(args).spawn().unwrap();
-        info!("Electrs spawned");
-
-        node_generate(&node, 101);
-
-        info!("creating electrs client");
-        let mut i = 120;
-        let electrs_header = loop {
-            assert!(i > 0, "1 minute without updates");
-            i -= 1;
-            match electrum_client::Client::new(&electrs_url) {
-                Ok(c) => {
-                    let header = c.block_headers_subscribe_raw().unwrap();
-                    if header.height == 101 {
-                        break c;
-                    }
-                }
-                Err(e) => {
-                    warn!("{:?}", e);
-                    thread::sleep(Duration::from_millis(500));
-                }
-            }
-        };
-        let _electrs = electrum_client::Client::new(&electrs_url).unwrap();
-        info!("done creating electrs client");
+        let chain = Some("liquidregtest");
+        log::warn!("spawning elementsd");
+        log::warn!("args {:?}", args);
+        //let elementsd = electrsd::bitcoind::BitcoinD::with_args(node_exec, args, false, electrsd::bitcoind::P2P::No, chain).unwrap();
+        let elementsd = electrsd::bitcoind::BitcoinD::with_args(node_exec, args, true, electrsd::bitcoind::P2P::No, chain).unwrap();
+        info!("elementsd spawned");
+        //let electrsd = electrsd::ElectrsD::new(electrs_exec, elementsd, false, false).unwrap();
+        let electrsd = electrsd::ElectrsD::new(electrs_exec, elementsd, true, false).unwrap();
+        info!("electrsd spawned");
 
         Self {
-            node,
-            node_process,
-            electrs_process,
-            electrs_header,
-            electrs_url,
-            _node_work_dir,
-            _electrs_work_dir,
+            server: electrsd,
         }
-    }
-
-    /// stop the bitcoin node in the test session
-    pub fn stop(&mut self) {
-        self.node.stop().unwrap();
-        self.node_process.wait().unwrap();
-        self.electrs_process.kill().unwrap();
     }
 
     pub fn node_getnewaddress(&self, kind: Option<&str>) -> elements::Address {
-        node_getnewaddress(&self.node, kind)
+        node_getnewaddress(&self.server.bitcoind.client, kind)
     }
 
     fn node_sendtoaddress(
@@ -273,14 +175,14 @@ impl TestElectrumServer {
         satoshi: u64,
         asset: Option<elements::issuance::AssetId>,
     ) -> String {
-        node_sendtoaddress(&self.node, address, satoshi, asset)
+        node_sendtoaddress(&self.server.bitcoind.client, address, satoshi, asset)
     }
     fn node_issueasset(&self, satoshi: u64) -> elements::issuance::AssetId {
-        let asset = node_issueasset(&self.node, satoshi);
+        let asset = node_issueasset(&self.server.bitcoind.client, satoshi);
         elements::issuance::AssetId::from_hex(&asset).unwrap()
     }
     fn node_generate(&self, block_num: u32) {
-        node_generate(&self.node, block_num)
+        node_generate(&self.server.bitcoind.client, block_num)
     }
 
     pub fn fund_btc(&mut self, address: &elements::Address, satoshi: u64) -> String {
@@ -300,8 +202,8 @@ impl TestElectrumServer {
 
     /// balance in satoshi of the node
     fn _node_balance(&self, asset: Option<String>) -> u64 {
-        let balance: Value = self.node.call("getbalance", &[]).unwrap();
-        let unconfirmed_balance: Value = self.node.call("getunconfirmedbalance", &[]).unwrap();
+        let balance: Value = self.server.bitcoind.client.call("getbalance", &[]).unwrap();
+        let unconfirmed_balance: Value = self.server.bitcoind.client.call("getunconfirmedbalance", &[]).unwrap();
         let asset_or_policy = asset.or(Some("bitcoin".to_string())).unwrap();
         let balance = match balance.get(&asset_or_policy) {
             Some(Value::Number(s)) => s.as_f64().unwrap(),
@@ -323,7 +225,7 @@ impl TestElectrumServer {
     /// ask the blockcain tip to electrs
     fn electrs_tip(&mut self) -> usize {
         for _ in 0..10 {
-            match self.electrs_header.block_headers_subscribe_raw() {
+            match self.server.client.block_headers_subscribe_raw() {
                 Ok(header) => return header.height,
                 Err(e) => {
                     warn!("electrs_tip {:?}", e); // fixme, for some reason it errors once every two try
